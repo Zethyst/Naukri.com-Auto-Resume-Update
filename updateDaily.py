@@ -10,6 +10,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Browser-like UA for Naukri; bare "Mozilla/5.0" is often blocked by WAF/bot checks.
+NAUKRI_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+)
+
 # ================== CONFIG (GLOBAL) ==================
 # Set in .env locally, or export / CI secrets (see .env for keys).
 username = os.environ.get("NAUKRI_USERNAME", "").strip()
@@ -28,21 +34,45 @@ def generate_file_key(length):
 # ================== LOGIN CLIENT ==================
 class NaukriLoginClient:
     LOGIN_URL = "https://www.naukri.com/central-login-services/v1/login"
+    LOGIN_PAGE_URL = "https://www.naukri.com/nlogin/login"
 
     def __init__(self, username: str, password: str):
         self.username = username
         self.password = password
         self.session = requests.Session()
 
+    def _page_headers(self):
+        return {
+            "accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                "image/avif,image/webp,image/apng,*/*;q=0.8"
+            ),
+            "accept-language": "en-US,en;q=0.9",
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "none",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "user-agent": NAUKRI_UA,
+        }
+
     def _get_headers(self):
         return {
             "accept": "application/json",
+            "accept-language": "en-US,en;q=0.9",
             "appid": "105",
             "clientid": "d3skt0p",
             "content-type": "application/json",
-            "referer": "https://www.naukri.com/nlogin/login",
+            "origin": "https://www.naukri.com",
+            "referer": self.LOGIN_PAGE_URL,
+            "sec-ch-ua": '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"macOS"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
             "systemid": "jobseeker",
-            "user-agent": "Mozilla/5.0",
+            "user-agent": NAUKRI_UA,
             "x-requested-with": "XMLHttpRequest",
         }
 
@@ -53,10 +83,19 @@ class NaukriLoginClient:
         }
 
     def login(self):
+        # Establish session cookies (e.g. Akamaisid) before the XHR login POST.
+        prime = self.session.get(
+            self.LOGIN_PAGE_URL,
+            headers=self._page_headers(),
+            timeout=60,
+        )
+        prime.raise_for_status()
+
         response = self.session.post(
             self.LOGIN_URL,
             headers=self._get_headers(),
-            json=self._get_payload()
+            json=self._get_payload(),
+            timeout=60,
         )
         response.raise_for_status()
         print("Login status:", response.status_code)
@@ -76,7 +115,7 @@ class NaukriLoginClient:
                 "appid": "105",
                 "clientid": "d3skt0p",
                 "systemid": "Naukri",
-                "user-agent": "Mozilla/5.0",
+                "user-agent": NAUKRI_UA,
                 "authorization": f"Bearer {self.get_bearer_token()}",
             },
         )
@@ -165,7 +204,7 @@ def update_resume() -> dict:
             "origin": "https://www.naukri.com",
             "referer": "https://www.naukri.com/",
             "systemid": "fileupload",
-            "user-agent": "Mozilla/5.0",
+            "user-agent": NAUKRI_UA,
         },
         files={"file": (final_filename, BytesIO(res.content), "application/pdf")},
         data={
@@ -214,7 +253,7 @@ def update_resume() -> dict:
                 "content-type": "application/json",
                 "origin": "https://www.naukri.com",
                 "referer": "https://www.naukri.com/",
-                "user-agent": "Mozilla/5.0",
+                "user-agent": NAUKRI_UA,
                 "x-http-method-override": "PUT",
             },
             cookies=cookies,
