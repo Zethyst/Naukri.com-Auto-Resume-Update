@@ -16,10 +16,15 @@ NAUKRI_UA = (
     "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
 )
 
+cookies = {"nauk_at":"<value>","nauk_rt":"<value>","nauk_sid":"<value>","MYNAUKRI[UNID]":"<value>"}
+
 # ================== CONFIG (GLOBAL) ==================
 # Set in .env locally, or export / CI secrets (see .env for keys).
 username = os.environ.get("NAUKRI_USERNAME", "").strip()
 password = os.environ.get("NAUKRI_PASSWORD", "").strip()
+# Cookie-based auth (preferred for CI): JSON object with nauk_at, nauk_rt, nauk_sid,
+# MYNAUKRI[UNID].  When set, the login POST is skipped entirely so no OTP is triggered.
+naukri_cookies_json = (os.environ.get("NAUKRI_COOKIES") or "").strip()
 file_id = os.environ.get("GOOGLE_DRIVE_FILE_ID", "").strip()
 form_key = os.environ.get("NAUKRI_FORM_KEY", "").strip()
 filename = (os.environ.get("RESUME_FILENAME") or "").strip() or None
@@ -131,6 +136,11 @@ class NaukriLoginClient:
         print("Profile ID:", profile_id)
         return profile_id
 
+    def inject_cookies(self, cookie_dict: dict):
+        """Load pre-captured cookies directly, bypassing the login POST."""
+        for name, value in cookie_dict.items():
+            self.session.cookies.set(name, value, domain=".naukri.com")
+
     def build_required_cookies(self):
         cookies = self.get_cookies()
 
@@ -153,8 +163,8 @@ def update_resume() -> dict:
     """
 
     # ---- VALIDATION ----
-    if not username or not password:
-        return {"success": False, "error": "Username/password missing"}
+    if not naukri_cookies_json and (not username or not password):
+        return {"success": False, "error": "Provide either NAUKRI_COOKIES or NAUKRI_USERNAME + NAUKRI_PASSWORD"}
 
     if not file_id:
         return {"success": False, "error": "file_id missing"}
@@ -168,18 +178,28 @@ def update_resume() -> dict:
 
     FILE_KEY = "U" + generate_file_key(13)
 
-    # ---- LOGIN ----
+    # ---- AUTH ----
     client = NaukriLoginClient(username, password)
 
-    try:
-        client.login()
-    except Exception as e:
-        return {"success": False, "error": f"Login failed: {e}"}
+    if naukri_cookies_json:
+        # Cookie-based auth: inject pre-captured cookies, no login POST fired.
+        # This avoids OTP triggers from cloud/datacenter IPs.
+        try:
+            cookie_dict = json.loads(naukri_cookies_json)
+        except Exception:
+            return {"success": False, "error": "NAUKRI_COOKIES is not valid JSON"}
+        client.inject_cookies(cookie_dict)
+        print("Auth: using injected cookies (skipping login)")
+    else:
+        try:
+            client.login()
+        except Exception as e:
+            return {"success": False, "error": f"Login failed: {e}"}
 
     token = client.get_bearer_token()
 
     if not token:
-        return {"success": False, "error": "Bearer token missing"}
+        return {"success": False, "error": "Bearer token (nauk_at) missing — cookies may have expired"}
 
     cookies = client.build_required_cookies()
 

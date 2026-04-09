@@ -23,6 +23,7 @@ jobs:
 
       - name: Run script
         env:
+          NAUKRI_COOKIES: ${{ secrets.NAUKRI_COOKIES }}
           NAUKRI_USERNAME: ${{ secrets.NAUKRI_USERNAME }}
           NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
           GOOGLE_DRIVE_FILE_ID: ${{ secrets.GOOGLE_DRIVE_FILE_ID }}
