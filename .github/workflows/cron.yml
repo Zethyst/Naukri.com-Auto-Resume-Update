@@ -2,7 +2,7 @@ name: Scheduled Job
 
 on:
   schedule:
-    - cron: "0 5 * * *"   # everyday at 5:00 AM UTC or IST (UTC+5:30) = 10:30 PM IST
+    - cron: "0 4 * * *"   # everyday at 4:00 AM UTC or IST (UTC+5:30) = 9:30 AM IST
   workflow_dispatch:        # allows manual run button
 
 jobs:
